@@ -35,10 +35,11 @@ class DownloadTask(QThread):
     finished = pyqtSignal()
     progress = pyqtSignal(int)
 
-    def __init__(self, config, browser_manager: BrowserManager):
+    def __init__(self, config, browser_manager: BrowserManager, should_report_progress: bool = False):
         super().__init__()
         self.config = config
         self.browser_manager = browser_manager
+        self.should_report_progress = should_report_progress
 
     def run(self):
         """
@@ -68,6 +69,13 @@ class DownloadTask(QThread):
         else:
             logger.info("打开失败...")
             return
+        
+        
+        progress_callback = None
+        if self.should_report_progress:
+            logger.info("设置进度条回调")
+            progress_callback = self.progress.emit
+
 
         try:
             if mode == '文章':
@@ -75,11 +83,36 @@ class DownloadTask(QThread):
                 await self.browser_manager.download_one(url=url, output_dir=output_dir, format_type=format_type)
 
             elif mode == '合集':
-                # 下载一篇文章
-                await self.browser_manager.download_album(url=url, output_dir=output_dir, format_type=format_type)
-            else:
-                # 批量
-                await self.browser_manager.batch_download(urls=url, output_dir=output_dir, format_type=format_type)
+                article_info = self.browser_manager.parse_album(url=url)
+                
+                total = article_info['total']
+                articles = article_info['articles']
+                album_name = article_info['album_name']
+                
+                output_dir = output_dir / Path(album_name)
+                
+                for i,article in enumerate(articles):
+                    await self.browser_manager.download_one(url=url, output_dir=output_dir, format_type=format_type)
+                    if progress_callback:
+                        progress = int((i + 1) / total * 100)
+                        logger.info(f"更新进度条: {progress}")
+                        progress_callback(progress*100)
+                
+                # await self.browser_manager.download_album(url=url, output_dir=output_dir, format_type=format_type, progress_callback=progress_callback)
+
+            elif mode == '批量':
+
+                urls = [u.strip() for u in url.split('\n') if u.strip()]
+                total = len(urls)
+                for i, single_url in enumerate(urls):
+                    # 这里假设批量下载不需要再解析，lineEdit中的每一行就是一个可以直接下载的URL
+                    await self.browser_manager.download_one(url=single_url, output_dir=output_dir, format_type=format_type)
+                    if progress_callback and total > 0:
+                        progress = int((i + 1) / total * 100)
+                        logger.info(f"批量下载进度: {progress}%")
+                        progress_callback(progress * 100)
+        
+        
         except Exception as e:
             logger.error(f"Download failed: {e}")
         finally:
@@ -221,8 +254,15 @@ class Ui_Window(object):
         self.selectPathButton.setObjectName("selectPathButton")
         self.horizontalLayout_2.addWidget(self.selectPathButton)
         self.verticalLayout.addLayout(self.horizontalLayout_2)
+        
+        # 进度条
         self.progressBar = QtWidgets.QProgressBar(Window)
         self.progressBar.setObjectName("progressBar")
+        self.progressBar.setFormat("%.2f%%" % (0.0))  # 设置显示格式为两位小数
+        self.progressBar.setRange(0, 10000)  # 将范围扩大100倍以支持小数
+        self.progressBar.hide()  # 初始时隐藏进度条
+        
+        
         self.verticalLayout.addWidget(self.progressBar)
         self.horizontalLayout = QtWidgets.QHBoxLayout()
         self.horizontalLayout.setObjectName("horizontalLayout")
@@ -240,7 +280,7 @@ class Ui_Window(object):
         self.retranslateUi(Window)
         QtCore.QMetaObject.connectSlotsByName(Window)
 
-        # Connect button clicks to functions
+
         self.selectPathButton.clicked.connect(self.open_file_dialog)
         self.openDir.clicked.connect(self.open_directory)
         self.clearLogButton.clicked.connect(self.clear_log)
@@ -298,18 +338,35 @@ class Ui_Window(object):
         self.startButton.setEnabled(False)
         self.progressBar.setValue(0)  # Reset progress bar
 
-        # Create and start the download task in a separate thread
-        self.download_task = DownloadTask(config, self.manager)
-        self.download_task.finished.connect(self.on_download_finished)
-        # self.download_task.progress.connect(self.update_progress) # If you have progress updates
-        self.download_task.start()
+        should_report_progress = config['mode'] in ['合集', '批量']
+        if should_report_progress:
+            self.progressBar.show()  # 显示进度条
+        else:
+            self.progressBar.hide()  # 隐藏进度条
 
+        # Create and start the download task in a separate thread
+        self.download_task = DownloadTask(config, self.manager, should_report_progress)
+        self.download_task.finished.connect(self.on_download_finished)
+        if should_report_progress:
+            self.download_task.progress.connect(self.update_progress)  # 连接进度信号
+        elif hasattr(self.download_task, 'progress'):
+            try:
+                self.download_task.progress.disconnect(self.update_progress)
+            except TypeError:
+                pass # 如果信号没有连接，disconnect 会抛出 TypeError
+
+        self.download_task.start()
+        
+        
+        
     def on_download_finished(self):
         """
         Called when the download task finishes.
         """
         logger.info("下载完成")
-        self.startButton.setEnabled(True)  # Re-enable the start button
+        self.startButton.setEnabled(True)  
+        self.progressBar.hide()  # 下载完成后隐藏进度条
+        self.progressBar.setValue(0)  # 重置进度条值
 
     def update_progress(self, value):
         """
