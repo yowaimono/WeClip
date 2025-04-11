@@ -1,3 +1,5 @@
+[English](https://github.com/yowaimono/WeClip/blob/main/docs/README_en.md) | [Chinese](https://github.com/yowaimono/WeClip/blob/main/README.md)
+
 # WeChat Official Account Article Downloader 📚
 
 ## Introduction ✨
