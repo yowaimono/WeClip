@@ -78,7 +78,7 @@ MIT License © 2023 [作者名]
 ## 联系我们 📩
 
 - 📧 Email: zhangyanhai278@gamil.com
-- 💬 Issues: [点击](https://github.com/yowaimono/WeClip/issue)
+- 💬 Issues: [点击](https://github.com/yowaimono/WeClip/issues)
 - 🌍 主页: [点击](https://github.com/yowaimono/WeClip)
 
 ---
