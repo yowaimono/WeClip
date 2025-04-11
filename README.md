@@ -73,7 +73,7 @@ graph TD
 
 ## 许可证 ⚖️
 
-MIT License © 2023 [作者名]
+MIT License © 2025 yowaimono
 
 ## 联系我们 📩
 
