@@ -1,17 +1,14 @@
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict
 from PyQt5 import QtCore, QtGui, QtWidgets
-from PyQt5.QtWidgets import QFileDialog, QListWidgetItem, QApplication, QDialog, QVBoxLayout, QListView, QAbstractItemView, QDialogButtonBox
-from PyQt5.QtCore import Qt, QStringListModel, QThread, pyqtSignal, QObject
+from PyQt5.QtWidgets import QFileDialog, QListWidgetItem,QApplication
 import os
 import logging
 import sys
-import asyncio
-
 from app.utils.logger import logger
 from app.browser import BrowserManager
-from .async_worker import ParseAlbumTask,DownloadTask,ArticleDownloadTask
-from .selection_dialog import ArticleSelectionDialog
+import asyncio
+from PyQt5.QtCore import QThread, pyqtSignal
 
 # 定义一个信号类，用于传递日志消息
 class LogSignal(QtCore.QObject):
@@ -31,26 +28,115 @@ class PyQt5Handler(logging.Handler):
         msg = self.format(record)
         self.log_signal.log_message.emit(msg)  # 发射信号，传递日志消息
 
-class Ui_Window(QObject):
-    # 类级别信号定义（只需要定义一次）
-    show_selection_dialog_signal = pyqtSignal(list, dict)  # 用于传递文章列表和配置
+class DownloadTask(QThread):
+    """
+    A QThread class to run the download tasks asynchronously.
+    """
+    finished = pyqtSignal()
+    progress = pyqtSignal(int)
+
+    def __init__(self, config, browser_manager: BrowserManager, should_report_progress: bool = False):
+        super().__init__()
+        self.config = config
+        self.browser_manager = browser_manager
+        self.should_report_progress = should_report_progress
+
+    def run(self):
+        """
+        Override the run method to execute the download task.
+        """
+        try:
+            asyncio.run(self.start_download())
+            self.finished.emit()
+        except Exception as e:
+            logger.error(f"Download task failed: {e}")
+            self.finished.emit()
+
+    async def start_download(self):
+        """
+        The actual download logic.
+        """
+        mode = self.config['mode']
+        url = self.config['url']
+        format_type = self.config["format_type"]
+        output_dir = self.config["output_dir"]
+        logger.info(f"配置: \n {self.config}")
+
+        # Open the browser within the thread
+        is_success = await self.browser_manager.open_browser()
+        if is_success:
+            logger.info("浏览器打开成功...")
+        else:
+            logger.info("打开失败...")
+            return
+        
+        
+        progress_callback = None
+        if self.should_report_progress:
+            logger.info("设置进度条回调")
+            progress_callback = self.progress.emit
+
+
+        try:
+            if mode == '文章':
+                # 下载合集
+                await self.browser_manager.download_one(url=url, output_dir=output_dir, format_type=format_type)
+
+            elif mode == '合集':
+                logger.info("开始下载")  # Use the imported logger
+                article_info = await self.browser_manager.parse_album(url=url)
+                
+                total = article_info['total']
+                articles = article_info['articles']
+                album_name = article_info['album_name']
+                
+                output_dir = output_dir / Path(album_name)
+                
+                for i,article in enumerate(articles):
+                    await self.browser_manager.download_one(url=article['link'], output_dir=output_dir, format_type=format_type)
+                    if progress_callback:
+                        progress = int((i + 1) / total * 10000)
+                        logger.info(f"更新进度条: {progress}")
+                        progress_callback(progress)
+                
+                # await self.browser_manager.download_album(url=url, output_dir=output_dir, format_type=format_type, progress_callback=progress_callback)
+
+            elif mode == '批量':
+
+                urls = [u.strip() for u in url.split('\n') if u.strip()]
+                total = len(urls)
+                for i, single_url in enumerate(urls):
+                    # 这里假设批量下载不需要再解析，lineEdit中的每一行就是一个可以直接下载的URL
+                    await self.browser_manager.download_one(url=single_url, output_dir=output_dir, format_type=format_type)
+                    if progress_callback:
+                        progress = int((i + 1) / total * 10000)
+                        logger.info(f"更新进度条: {progress/100:.2f}%")  # 记录实际百分比
+                        progress_callback(progress)  # 传递0-10000之间的值
+        
+        
+        except Exception as e:
+            logger.error(f"Download failed: {e}")
+        finally:
+            is_success = await self.browser_manager.close_browser()
+
+            if is_success:
+                logger.info("浏览器关闭成功...")
+            else:
+                logger.info("关闭失败...")
+
+class Ui_Window(object):
 
     def __init__(self):
-        # 首先初始化QObject
-        super().__init__()
+        # 持有一个browser
+        self.manager = BrowserManager()  # Remove this shared instance
+        self.download_task = None  # Store the download task thread
 
-        # 初始化成员变量
-        self.manager = BrowserManager()
-        self.download_task = None
+        # Store the selected path
         self.selected_path = ""
         self.default_dir = Path.home().joinpath("Desktop", "微信公众号文章")
-        self.log_signal = LogSignal()
-        self.selection_dialog = None
-        self.article_list = []
-        self.is_downloading = False  # 添加一个标志来跟踪下载状态
-
-        # 连接信号
-        self.show_selection_dialog_signal.connect(self.show_selection_dialog)
+        
+        # Set up logging
+        self.log_signal = LogSignal()  # 创建信号实例
 
     def setupUi(self, Window):
         Window.setObjectName("Window")
@@ -78,7 +164,7 @@ class Ui_Window(QObject):
         self.logView.setWordWrap(True)
 
         self.verticalLayout.addWidget(self.logView)
-
+        
         self.horizontalLayout_3 = QtWidgets.QHBoxLayout()
         self.horizontalLayout_3.setObjectName("horizontalLayout_3")
 
@@ -135,8 +221,8 @@ class Ui_Window(QObject):
         self.horizontalLayout_3.setStretch(4, 0)  # openDir
         self.horizontalLayout_3.setStretch(5, 1)  # spacerItemMiddle3
         self.horizontalLayout_3.setStretch(6, 0)  # importButton
-
-
+                                
+        
         self.verticalLayout.addLayout(self.horizontalLayout_3)
         self.horizontalLayout_2 = QtWidgets.QHBoxLayout()
         self.horizontalLayout_2.setObjectName("horizontalLayout_2")
@@ -159,22 +245,27 @@ class Ui_Window(QObject):
         self.pathLine.setAutoFillBackground(False)
         self.pathLine.setReadOnly(True)
         self.pathLine.setObjectName("pathLine")
-
+        
+        
+        
+        
+        
         self.horizontalLayout_2.addWidget(self.pathLine)
         self.selectPathButton = QtWidgets.QPushButton(Window)
         self.selectPathButton.setObjectName("selectPathButton")
         self.horizontalLayout_2.addWidget(self.selectPathButton)
         self.verticalLayout.addLayout(self.horizontalLayout_2)
-
+        
         # 进度条
         self.progressBar = QtWidgets.QProgressBar(Window)
         self.progressBar.setObjectName("progressBar")
-
+        
         self.progressBar.setRange(0, 10000)  # 将范围扩大100倍以支持小数
         self.progressBar.setFormat("%p%")  # 注意这里不带%()格式
+
         self.progressBar.hide()  # 初始时隐藏进度条
-
-
+        
+        
         self.verticalLayout.addWidget(self.progressBar)
         self.horizontalLayout = QtWidgets.QHBoxLayout()
         self.horizontalLayout.setObjectName("horizontalLayout")
@@ -192,14 +283,15 @@ class Ui_Window(QObject):
         self.retranslateUi(Window)
         QtCore.QMetaObject.connectSlotsByName(Window)
 
+
         self.selectPathButton.clicked.connect(self.open_file_dialog)
         self.openDir.clicked.connect(self.open_directory)
         self.clearLogButton.clicked.connect(self.clear_log)
         self.startButton.clicked.connect(self.start_download)
         self.importButton.clicked.connect(self.import_link)
         # 连接信号和槽
-        self.log_signal.log_message.connect(self.update_log_view)
-
+        self.log_signal.log_message.connect(lambda msg: self.update_log_view(msg))
+        
         self.selected_path = self.default_dir
 
         self.setup_logging()
@@ -222,11 +314,11 @@ class Ui_Window(QObject):
         self.clearLogButton.setText(_translate("Window", "清空日志"))
         self.openDir.setText(_translate("Window", "打开目录"))
         self.label_2.setText(_translate("Window", "导出类型"))
-        self.importButton.setText(_translate("Window", "导入链接"))
+        self.importButton.setText(_translate("Window","导入链接"))
         self.pathLine.setText(_translate("Window", ""))
         self.selectPathButton.setText(_translate("Window", "选择路径"))
         self.startButton.setText(_translate("Window", "开始下载"))
-        self.pathLine.setText(_translate("Window", str(self.default_dir)))
+        self.pathLine.setText(_translate("Window",str(self.default_dir)))
 
     def setup_logging(self):
         """Sets up logging to the QListWidget."""
@@ -245,81 +337,40 @@ class Ui_Window(QObject):
         config = self.get_config()
         logger.info(f"--------------\n\n {config} \n\n----------------")
 
+
         # Disable the start button to prevent multiple clicks
         self.startButton.setEnabled(False)
         self.progressBar.setValue(0)  # Reset progress bar
-        self.progressBar.hide()  # 初始时隐藏进度条
 
-        # 新增代码
-        if config['mode'] == '合集':
-            self.parse_album_task = ParseAlbumTask(config, self.manager)
-            self.parse_album_task.articles_parsed.connect(self.show_selection_dialog_signal.emit)  # 连接信号
-            self.parse_album_task.finished.connect(lambda: logger.info("合集解析任务完成"))
-            self.parse_album_task.error.connect(self.on_parse_album_error)
-            self.parse_album_task.start()
-        elif config['mode'] == '批量':
-            self.article_list = [u.strip() for u in config['url'].split('\n') if u.strip()]
-            self.show_selection_dialog_signal.emit(self.article_list, config)  # 直接发射信号
-        else:
-            # 直接下载文章
-            self.start_article_download(config)
 
-    def start_article_download(self, config):
-        """启动单篇文章下载任务"""
+
         should_report_progress = config['mode'] in ['合集', '批量']
+        if should_report_progress:
+            self.progressBar.show()  # 显示进度条
+        else:
+            self.progressBar.hide()  # 隐藏进度条
+
+        # Create and start the download task in a separate thread
         self.download_task = DownloadTask(config, self.manager, should_report_progress)
         self.download_task.finished.connect(self.on_download_finished)
-        self.download_task.progress.connect(self.update_progress)  # 连接进度信号
+        if should_report_progress:
+            self.download_task.progress.connect(self.update_progress)  # 连接进度信号
+        elif hasattr(self.download_task, 'progress'):
+            try:
+                self.download_task.progress.disconnect(self.update_progress)
+            except TypeError:
+                pass # 如果信号没有连接，disconnect 会抛出 TypeError
 
-        # 启动下载任务
-        self.progressBar.show()  # 显示进度条
         self.download_task.start()
-
-    def on_parse_album_error(self, error):
-        """处理合集解析任务的错误"""
-        logger.error(f"合集解析任务出错: {error}")
-        self.startButton.setEnabled(True)  # 重新启用开始按钮
-        self.progressBar.hide()  # 隐藏进度条
-        self.progressBar.setValue(0)  # 重置进度条值
-
-    @QtCore.pyqtSlot(list, dict)
-    def show_selection_dialog(self, article_list, config):
-        """显示文章选择对话框"""
-        self.selection_dialog = ArticleSelectionDialog(article_list, config, self.manager, QApplication.activeWindow())
-        self.selection_dialog.articles_selected.connect(self.start_download_task)
-        self.selection_dialog.dialog_closed.connect(self.on_selection_dialog_closed)
-        self.selection_dialog.show()
-
-    def on_selection_dialog_closed(self):
-        """统一处理对话框关闭"""
-        print("对话框已关闭")  # 调试用
-        # 执行清理操作
-        if hasattr(self, 'selection_dialog'):
-            self.selection_dialog.deleteLater()
-            del self.selection_dialog
-
-
-    def start_download_task(self, config):
-        """启动下载任务"""
-        if config and config.get('articles'):
-            self.download_task = ArticleDownloadTask(config, self.manager)
-            self.download_task.finished.connect(self.on_download_finished)
-            self.download_task.progress.connect(self.update_progress)
-            self.download_task.start()
-            self.progressBar.show()  # 显示进度条
-            self.startButton.setEnabled(False)  # 禁用开始按钮
-        else:
-            logger.warning("没有选择任何文章，取消下载。")
-            self.startButton.setEnabled(True)  # 重新启用开始按钮
-            self.progressBar.hide()  # 隐藏进度条
-            self.progressBar.setValue(0)  # 重置进度条值
-
+        
+        
+        
     def on_download_finished(self):
         """
         Called when the download task finishes.
         """
         logger.info("下载完成")
-        self.startButton.setEnabled(True)
+        self.startButton.setEnabled(True)  
         self.progressBar.hide()  # 下载完成后隐藏进度条
         self.progressBar.setValue(0)  # 重置进度条值
 
@@ -385,27 +436,11 @@ class Ui_Window(QObject):
         logger.info(
             f"下载链接：{config['url']}, 下载类型：{config['mode']}, 保存类型: {config['format_type']}, 保存路径: {config['output_dir']}")
 
-    @QtCore.pyqtSlot()
-    def on_selection_dialog_closed(self):
-        """当选择对话框关闭时调用"""
-        # 只有在没有下载任务运行时才启用开始按钮
-        if not self.is_downloading:
-            self.startButton.setEnabled(True)  # 重新启用开始按钮
-            self.progressBar.hide()  # 隐藏进度条
-            self.progressBar.setValue(0)  # 重置进度条值
-
-
-
-
-
 if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)
     window = QtWidgets.QMainWindow()  # 创建 QMainWindow 实例
-    from app.ui import Ui_Window
     ui = Ui_Window()
     ui.setupUi(window)  # 将 UI 设置到 QMainWindow 中
 
     window.show()
     sys.exit(app.exec_())
-
-# 7. `app/parse_album_task.py` (合集解析任务)
