@@ -24,6 +24,7 @@ if [ -f "$PROJECT_ROOT/requirements.txt" ]; then
   pip install -r "$PROJECT_ROOT/requirements.txt"
 fi
 
+playwright install
 
 echo "运行主程序..."
 python "$MAIN_SCRIPT"
