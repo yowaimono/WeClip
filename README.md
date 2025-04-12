@@ -46,6 +46,10 @@ graph TD
 4. 点击"开始下载"按钮
 5. 通过日志查看进度
 
+![alt text](docs/img1.png)
+
+![alt text](docs/img2.png)
+
 ## 开发状态 🛠
 
 ### 已实现功能 ✔️
