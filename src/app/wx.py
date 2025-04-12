@@ -1,6 +1,6 @@
 import asyncio
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 from playwright.async_api import Page
 import html2text
 import os
@@ -67,17 +67,44 @@ class WechatArticleDownloader:
             album_name = "未命名合集"
             name_element = await page.query_selector("#js_tag_name")
             if name_element:
-                album_name = (await name_element.text_content()).replace("合集：#", "").strip()
+                # 尝试获取直接文本内容
+                direct_text = (await name_element.text_content()).strip()
+                if direct_text.startswith("合集：#"):
+                    album_name = direct_text.replace("合集：#", "").strip()
+                else:
+                    # 如果没有 "合集：#" 前缀，则直接使用文本内容
+                    album_name = direct_text
+
+                # 再次检查是否为空，并尝试获取 span 中的文本（如果存在）
+                if not album_name:
+                    span_element = await name_element.query_selector("span")
+                    if span_element:
+                        album_name = (await span_element.text_content()).strip()
+                    else:
+                        # 如果没有 span，但 name_element 存在，则可能是其他结构，可以再次尝试获取 textContent
+                        album_name = direct_text # 再次使用直接文本，以防万一
+
+                album_name = album_name.replace("#", "").strip() # 移除可能残留的 # 并清理空白
+                
             logger.info(f"合集名称: {album_name}")
 
             articles = []
+            total_articles = 0
 
             # 尝试查找“展开更多”按钮，判断是否为第一种合集类型
             expand_more_button = await page.query_selector('div.unfold-more__word:has-text("展开更多")')
 
             if expand_more_button:
-                # logger.info("检测到“展开更多”按钮，按第一种合集类型解析。")
+                logger.info("检测到“展开更多”按钮，按第一种合集类型解析。")
                 
+                # 解析总文章数
+                count_element = await page.query_selector('.album__novel_content-info span')
+                if count_element:
+                    count_text = await count_element.text_content()
+                    match = re.search(r'(\d+)篇内容', count_text)
+                    if match:
+                        total_articles = int(match.group(1))
+                        logger.info(f"解析到总文章数: {total_articles}")
 
                 max_retries = 5
                 for _ in range(max_retries):
@@ -105,11 +132,18 @@ class WechatArticleDownloader:
             else:
                 # logger.info("未检测到“展开更多”按钮，按第二种合集类型（滚动加载）解析。")
                 
-
+                # 解析总文章数
+                count_element = await page.query_selector('.album__desc-content span')
+                if count_element:
+                    count_text = await count_element.text_content()
+                    match = re.search(r'(\d+)篇内容', count_text)
+                    if match:
+                        total_articles = int(match.group(1))
+                        logger.info(f"解析到总文章数: {total_articles}")
                 
                 
                 scroll_count = 0
-                max_scrolls = 1000
+                max_scrolls = 1000000 # 100w
                 while scroll_count < max_scrolls:
                     await page.wait_for_selector(".album__list.js_album_list", timeout=5000)
                     list_items = await page.query_selector_all(".album__list.js_album_list li.album__list-item.js_album_item")
@@ -122,25 +156,31 @@ class WechatArticleDownloader:
                         if link and not any(article["link"] == link for article in articles):
                             articles.append({"title": title, "link": link})
 
-                    # logger.info(f"当前解析到 {len(articles)} 篇文章 (滚动加载)")
+                    logger.info(f"当前解析到 {len(articles)} 篇文章 (滚动加载)")
 
                     # 检测是否到达底部，判断 style="display: none;"
                     no_more_element = await page.query_selector(".over-line.js_no_more_album")
                     if no_more_element:
                         style = await no_more_element.get_attribute("style")
                         if style and "display: none;" not in style:
-                            # logger.info("已到达合集底部，停止滚动。")
+                            logger.info("已到达合集底部，停止滚动。")
                             break
-
+                        
+                        
+                    if len(articles) == initial_article_count and scroll_count > 1000:
+                        logger.info("多次滚动未加载更多内容，停止滚动。")
+                        break
+                    
+                    if len(articles) == total_articles:
+                        break
+                    
                     await page.evaluate("window.scrollBy(0, document.body.scrollHeight);")
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(0.3)
                     scroll_count += 1
 
-                    if len(articles) == initial_article_count and scroll_count > 10:
-                        # logger.info("多次滚动未加载更多内容，停止滚动。")
-                        break
+                    
 
-            # logger.info(f"最终解析到 {len(articles)} 篇文章")
+            logger.info(f"最终解析到 {len(articles)} 篇文章")
             return {
                 "album_name": album_name,
                 "articles": articles,
@@ -155,7 +195,7 @@ class WechatArticleDownloader:
         
         
         
-    async def download_album(self, page: Page, album_url, output_dir=None,format_type: Optional[str] = None):
+    async def download_album(self, page: Page, album_url, output_dir=None,format_type: Optional[str] = None, progress_callback: Callable[[int], None] = None):
         """下载微信公众号合集中的所有文章，重用传入的 page 对象."""
         album_info = await self.parse_album(page, album_url)
         logger.info(f"获取到的文章总数: {album_info['total']}")
@@ -189,12 +229,19 @@ class WechatArticleDownloader:
                         filename = f"{album_name} - {self._extract_title_from_url(article['link'])}.{format_type}"
                         filename = re.sub(r'[\\/:*?\"<>|]', '_', filename)
                         await exporter.export(page, final_dir, filename)
+                    
+                    if progress_callback:
+                        progress = int((index + 1) / album_info['total'] * 100)
+                        logger.info(f"更新进度条: {progress}")
+                        progress_callback(progress*100)
+                        
+                        
                 except Exception as e:
                     logger.error(f"下载文章 {article['title']} - {article['link']} 失败: {e}")
         else:
             logger.info(f"无法解析合集或合集为空: {album_url}")
 
-    async def batch_download(self, page: Page, urls_text, output_dir=None,format_type:Optional[str] = None):
+    async def batch_download(self, page: Page, urls_text, output_dir=None,format_type:Optional[str] = None, progress_callback: Callable[[int], None] = None):
         """批量下载微信公众号文章，urls_text 按行分割，每一行都是一个 URL."""
 
         final_output_dir = self._prepare_output_dir(output_dir=output_dir)
@@ -206,9 +253,13 @@ class WechatArticleDownloader:
         logger.info(f"分割成{len(urls)}个url...")
         # urls = [url.strip() for url in urls if url.strip() and (url.startswith('http://') or url.startswith('https://'))]
         logger.info(f"解析到 {len(urls)} 个 URL，开始下载到 {final_output_dir}...")
-        for url in urls:
+        for i, url in enumerate(urls):
             logger.info(f"开始下载: {url}")
             await self.download_single_article(page, url, final_output_dir,format_type=format_type)
+            if progress_callback:
+                logger.info(f"更新进度条: {progress}")
+                progress = int((i + 1) / len(urls) * 100)
+                progress_callback(progress*100)
         logger.info("批量下载完成。")
 
     def _extract_title_from_url(self, url):

@@ -20,12 +20,12 @@ class ArticleExporter(ABC):
         pass
 
     async def _scroll_and_clean_page(self, page: Page):
-        """滚动页面并清理元素(公共实现)"""
+        """滚动页面并清理元素(公共实现) - 更快的滚动"""
         await page.evaluate("""async () => {
             await new Promise((resolve) => {
                 let scrollHeight = document.body.scrollHeight;
                 let currentPosition = 0;
-                const distance = 100;
+                const distance = 150; // 可以适当增加每次滚动的距离
                 const timer = setInterval(() => {
                     window.scrollBy(0, distance);
                     currentPosition += distance;
@@ -33,10 +33,10 @@ class ArticleExporter(ABC):
                         clearInterval(timer);
                         resolve();
                     }
-                }, 100);
+                }, 50); // 减少延迟，加快滚动速度
             });
         }""")
-        
+
         await page.evaluate("""() => {
             const selectors = ["#content_bottom_area", "#content_bottom_interaction"];
             selectors.forEach(selector => {

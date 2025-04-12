@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Callable, Optional
 from playwright.async_api import async_playwright
 from app.utils.logger import logger
 from app.wx import WechatArticleDownloader
@@ -56,19 +56,29 @@ class BrowserManager:
         except Exception as e:
             logger.error(f"下载文章失败：{e}")
 
-    async def download_album(self, url: str, output_dir: str = None, format_type: Optional[str] = None):
+    async def download_album(self, url: str, output_dir: str = None, format_type: Optional[str] = None, progress_callback: Callable[[int], None] = None):
         try:
             await self.downloader.download_album(page=self.page, album_url=url, output_dir=output_dir,
-                                                  format_type=format_type)
+                                                  format_type=format_type,progress_callback=progress_callback)
             logger.info(f"下载合集完成：{url}")
         except Exception as e:
             logger.error(f"下载合集失败：{e}")
 
-    async def batch_download(self, urls, output_dir=None, format_type: Optional[str] = None):
+    async def batch_download(self, urls, output_dir=None, format_type: Optional[str] = None, progress_callback: Callable[[int], None] = None):
         try:
             await self.downloader.batch_download(page=self.page, urls_text=urls, output_dir=output_dir,
-                                                  format_type=format_type)
+                                                  format_type=format_type,progress_callback=progress_callback)
 
             logger.info(f"批量下载完成：{urls}")
         except Exception as e:
             logger.error(f"批量下载失败：{e}")
+
+    async def parse_album(self,url: str):
+        try:
+            # 解析所有文章
+            article_info = await self.downloader.parse_album(self.page,album_url=url)
+            logger.info(f"解析完成：{article_info}")
+            return article_info
+            
+        except Exception as e:
+            logger.error(f"解析失败：{e}")
