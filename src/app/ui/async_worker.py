@@ -124,6 +124,8 @@ class ParseAlbumTask(QThread):
             asyncio.set_event_loop(loop)
             article_info = loop.run_until_complete(self.parse_and_get_articles())
             if article_info:
+                self.config['album_name'] = article_info['album_name']
+                
                 self.articles_parsed.emit(article_info['articles'], self.config)  # 发射信号
             else:
                 self.error.emit("Failed to parse album.")
@@ -192,11 +194,12 @@ class ArticleDownloadTask(QThread):
         articles = self.config['articles']
         format_type = self.config["format_type"]
         output_dir = self.config["output_dir"]
+        # album_name = self.config['album_name']
         total = self.config["total"]
 
         logger.info(f"配置: \n {self.config}")
 
-        
+        # output_dir = Path(output_dir) / Path(album_name)
 
         # Open the browser within the thread
         is_success = await self.browser_manager.open_browser()
@@ -208,7 +211,7 @@ class ArticleDownloadTask(QThread):
         
         if not articles:
             return
-        
+        logger.info(f"当前合集名称：{output_dir}")
         logger.info(f"----------------开始下载: {len(articles)}篇文章----------------")  # Use the imported logger
         try:
             for i, article in enumerate(articles):
