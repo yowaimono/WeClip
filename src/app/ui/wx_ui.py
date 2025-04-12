@@ -302,6 +302,7 @@ class Ui_Window(QObject):
     def start_download_task(self, config):
         """启动下载任务"""
         if config and config.get('articles'):
+            
             self.download_task = ArticleDownloadTask(config, self.manager)
             self.download_task.finished.connect(self.on_download_finished)
             self.download_task.progress.connect(self.update_progress)
