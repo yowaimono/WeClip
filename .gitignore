@@ -1,0 +1,107 @@
+# Python
+*.pyc
+*.pyo
+__pycache__/
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+sdist/
+wheelhouse/
+env/
+venv/
+ENV
+main.py
+.env
+.venv
+local_settings.py
+instance/
+celerybeat.pid
+celeryd.pid
+celeryev.pid
+tmp/
+logs/
+*.log
+*.db
+*.sqlite
+*.sqlite3
+__pypackages__/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+eggs/
+.eggs/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.conda
+.ipynb_checkpoints/
+
+# Static analysis
+.mypy_cache/
+.dmypy.json
+pytype_output/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Other common files
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+.cache/
+__MACOSX/
+
+# Optional - depending on your project
+
+# Requirements file (if you don't want to ignore changes)
+# requirements.txt
+
+# Data files (if large or frequently changing)
+# data/
+
+# Uploads directory
+# uploads/
+
+# Media files
+# media/
+
+# Node.js (if you have frontend)
+node_modules/
+package-lock.json
+yarn.lock
+
+# Docker (if you use Docker)
+# .dockerignore
+
+# Git related
+.gitattributes
+
+# OS generated files
+.localized
+
+# Editor backups
+*~
+\#*\#
+.*.swp
+.backup*

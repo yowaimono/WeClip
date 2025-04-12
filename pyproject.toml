@@ -1,0 +1,49 @@
+[project]
+name = "weclip"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "yowaimono"}
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.group.dev.dependencies]
+brotli = "1.1.0"
+cffi = "1.17.1"
+click = "8.1.8"
+colorama = "0.4.6"
+cssselect2 = "0.8.0"
+fonttools = "4.57.0"
+greenlet = "3.1.1"
+html2text = "2024.2.26"
+pdfkit = "1.0.0"
+pillow = "11.1.0"
+playwright = "1.51.0"
+pycparser = "2.22"
+pydyf = "0.11.0"
+pyee = "12.1.1"
+pyphen = "0.17.2"
+pyqt5 = "5.15.9"
+pyqt5-plugins = "5.15.9.2.3"
+pyqt5-qt5 = "5.15.2"
+pyqt5-tools = "5.15.9.3.3"
+pyqt5-sip = "12.17.0"
+python-dotenv = "1.1.0"
+qt5-applications = "5.15.2.2.3"
+qt5-tools = "5.15.2.1.3"
+tinycss2 = "1.4.0"
+tinyhtml5 = "2.0.0"
+typing-extensions = "4.13.1"
+weasyprint = "65.0"
+webencodings = "0.5.1"
+zopfli = "0.2.3.post1"
+
