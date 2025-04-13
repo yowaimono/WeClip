@@ -3,10 +3,19 @@ from playwright.async_api import Page
 from typing import Optional
 from .base import ArticleExporter
 from app.utils.logger import logger
+import asyncio
 class HTMLExporter(ArticleExporter):
     
     def get_file_extension(self) -> str:
-        return ".html"
+        return ".mhtml"
+    
+    async def save_mhtml(self,path: str, text: str):
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, lambda: self._sync_save_mhtml(path, text))
+
+    def _sync_save_mhtml(self,path: str, text: str):
+        with open(path, mode='w', encoding='UTF-8', newline='\n') as file:
+            file.write(text)
     
     async def export(self, page: Page, output_dir: Path, filename: Optional[str] = None) -> Path:
         """导出为HTML格式"""
@@ -18,16 +27,13 @@ class HTMLExporter(ArticleExporter):
         
         filename = filename or await self._generate_filename(page)
         logger.info(f"生成文件名...{filename}")
-        content_div = await page.query_selector("#page-content")
-        
-        if not content_div:
-            raise Exception("未找到 #page-content 元素！")
-        
-        article_html = await content_div.inner_html()
-        styled_html = self._wrap_html(article_html, filename)
-        
         output_path = output_dir / Path(filename)
-        output_path.write_text(styled_html, encoding="utf-8")
+        
+        
+        client = await page.context.new_cdp_session(page)
+        mhtml = (await client.send("Page.captureSnapshot"))['data']
+        await self.save_mhtml(output_path, mhtml)
+
         return output_path
     
     def _wrap_html(self, content: str, title: str) -> str:
