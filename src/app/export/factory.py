@@ -2,7 +2,7 @@ from typing import Dict, Optional, Type
 from .base import ArticleExporter
 from .md import MarkdownExporter
 from .html import HTMLExporter
-# from .pdf import PDFExporter
+from .pdf import PDFExporter
 from app.utils.logger import logger
 class ExporterFactory:
     """导出器工厂，管理各种导出格式"""
@@ -11,7 +11,7 @@ class ExporterFactory:
         "md": MarkdownExporter,
         "markdown": MarkdownExporter,
         "html": HTMLExporter,
-        # "pdf": lambda: PDFExporter(wkhtmltopdf_path="D:/wkhtmltopdf/bin/wkhtmltopdf.exe"),
+        "pdf": PDFExporter,
     }
     
     @classmethod
