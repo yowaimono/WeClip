@@ -31,6 +31,27 @@ class PyQt5Handler(logging.Handler):
         msg = self.format(record)
         self.log_signal.log_message.emit(msg)  # 发射信号，传递日志消息
 
+# 自定义 QListWidget，添加右键复制功能
+class MyListWidget(QtWidgets.QListWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)  # 启用自定义上下文菜单
+        self.customContextMenuRequested.connect(self.openMenu)  # 连接信号到槽函数
+
+    def openMenu(self, position):
+        menu = QtWidgets.QMenu()
+        copy_action = menu.addAction("复制")
+        copy_action.triggered.connect(self.copyText)  # 连接复制动作到槽函数
+
+        menu.exec_(self.viewport().mapToGlobal(position))  # 显示菜单
+
+    def copyText(self):
+        selected_item = self.currentItem()
+        if selected_item:
+            text = selected_item.text()
+            clipboard = QtWidgets.QApplication.clipboard()
+            clipboard.setText(text)
+
 class Ui_Window(QObject):
     # 类级别信号定义（只需要定义一次）
     show_selection_dialog_signal = pyqtSignal(list, dict)  # 用于传递文章列表和配置
@@ -73,7 +94,9 @@ class Ui_Window(QObject):
         self.lineEdit.setObjectName("lineEdit")
         self.gridLayout_2.addWidget(self.lineEdit, 0, 1, 1, 1)
         self.verticalLayout.addLayout(self.gridLayout_2)
-        self.logView = QtWidgets.QListWidget(Window)
+
+        # 使用自定义的 MyListWidget
+        self.logView = MyListWidget(Window)
         self.logView.setObjectName("logView")
         self.logView.setWordWrap(True)
 
@@ -402,11 +425,9 @@ class Ui_Window(QObject):
 if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)
     window = QtWidgets.QMainWindow()  # 创建 QMainWindow 实例
-    from app.ui import Ui_Window
+    # from app.ui import Ui_Window  # 移除这行
     ui = Ui_Window()
     ui.setupUi(window)  # 将 UI 设置到 QMainWindow 中
 
     window.show()
     sys.exit(app.exec_())
-
-# 7. `app/parse_album_task.py` (合集解析任务)
