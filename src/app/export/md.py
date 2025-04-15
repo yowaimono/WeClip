@@ -34,6 +34,26 @@ class MarkdownExporter(ArticleExporter):
     async def export(self, page: Page, output_dir: Path, filename: Optional[str] = None) -> Path:
         """导出为Markdown格式"""
         await self._scroll_and_clean_page(page)
+        
+        
+        await page.evaluate("""() => {
+            // 要移除的元素列表
+            const selectors = [
+                "#meta_content",  // 原 meta_content
+                "#js_article_bottom_bar",  // 底部栏
+                ".wx_profile_card_inner",  // 微信名片
+                "#js_a11y_wx_profile_logo",  // 微信 logo
+                ".rich_media_tool_area",  // 工具栏
+                "#content_bottom_area",  // 原内容底部区域
+                "#content_bottom_interaction"  // 原交互区域
+            ];
+            
+            selectors.forEach(selector => {
+                const element = document.querySelector(selector);
+                if (element) element.remove();
+            });
+        }""")
+        
 
         filename = filename or await self._generate_filename(page)
         # 获取整个页面的 HTML 内容
